@@ -29,6 +29,16 @@ int cursorChar = 18;
 int characterUpArrow = 26;
 int characterDownArrow = 27;
 
+int commandKeyUp = 6;
+int commandKeySelect = 7;
+int commandKeyDelete = 8;
+int commandKeyEnter = 10;
+int commandKeyBack = 17;
+int commandKeyDown = 18;
+
+char newline = 0xA;
+char clearDisplay = 0x01;
+
 String outgoingMessage = "";
 String incomingMessage = "";
 
@@ -57,12 +67,12 @@ void setup() {
 
   //initialize screen
   SetupScreen();
-  sendCommand(0x01); // ** Clear display
+  sendCommand(clearDisplay); // ** Clear display
   sendMessage("BlackTerminal0.1started", currentPage);
   // sendMessage("started v0.1", 2);
   delay(1000);//wait one sec to see the started message
 
-  sendCommand(0x01); // ** Clear display
+  sendCommand(clearDisplay); // ** Clear display
   setCursor(0,0);
 }
 
@@ -79,7 +89,15 @@ void checkForSIM7600Messages() {
     //remove incoming end \r\n from the message
     messageFromSIM7600.trim();
     Serial.println(messageFromSIM7600);
-    //Serial.println(messageFromSIM7600.length());
+    Serial.println(messageFromSIM7600.indexOf(newline));// newline character
+
+
+    incomingMessage = messageFromSIM7600;
+    setCursor(0,0);  
+    sendMessage(incomingMessage, currentPage);
+
+    //setCursor(0,0);  
+    //sendMessage(messageFromSIM7600, currentPage);
   }
 }
 
@@ -97,8 +115,8 @@ void checkForIDEMessages() {
     Serial.print(incoming);  
     Serial.println("\"");    
     
+    // send to SIM7600
     Serial1.println(incoming);
-      // end if    
   }
   // ------------------------------------------ 
 }
@@ -117,28 +135,26 @@ void checkForKeyboardMessages() {
   // character keys
   if (key.state == BBQ10Keyboard::StateRelease) {
     if (!isCommandKey(key)) {
-      Serial.printf("character key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
-
+      //Serial.printf("character key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
       characterKeyPressed(key);
 
     } else if(isCommandKey(key)){
-      Serial.printf("command key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
-
-      if (key.key == 6) { // up button pressed
+      //Serial.printf("command key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
+      if (key.key == commandKeyUp) { // up button pressed
         upCommandPressed();
-      } else if (key.key == 7) { // select button pressed
+      } else if (key.key == commandKeySelect) { // select button pressed
         Serial.println("cursor select");  
 
-      } else if (key.key == 8) { // delete character button pressed
+      } else if (key.key == commandKeyDelete) { // delete character button pressed
         deleteCharacterPressed();
 
-      } else if (key.key == 10) { // enter key pressed
+      } else if (key.key == commandKeyEnter) { // enter key pressed
         enterCommandPressed();
 
-      } else if (key.key == 17) { // back button pressed
+      } else if (key.key == commandKeyBack) { // back button pressed
         Serial.println("cursor back");  
 
-      } else if (key.key == 18) { // down button pressed
+      } else if (key.key == commandKeyDown) { // down button pressed
         downCommandPressed();
       }
     }
@@ -148,7 +164,12 @@ void checkForKeyboardMessages() {
 // KEYBOARD METHODS
 bool isCommandKey(BBQ10Keyboard::KeyEvent key)
 {
-  if(key.key == 8 || key.key == 6 || key.key == 7 || key.key == 10 || key.key == 17  || key.key == 18) {
+  if(key.key == commandKeyUp 
+    || key.key == commandKeySelect 
+    || key.key == commandKeyDelete 
+    || key.key == commandKeyEnter
+    || key.key == commandKeyBack
+    || key.key == commandKeyDown) {
     return true;    
   }
 
@@ -157,8 +178,8 @@ bool isCommandKey(BBQ10Keyboard::KeyEvent key)
 
 void characterKeyPressed(BBQ10Keyboard::KeyEvent key)
 {
-  String state = "released";
-  Serial.printf("character key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
+  //String state = "released";
+  //Serial.printf("character key: '%c' (dec %d, hex %02x) %s\r\n", key.key, key.key, key.key, state.c_str());
 
   currentPage = 0;
   outgoingMessage += key.key;
@@ -170,15 +191,15 @@ void characterKeyPressed(BBQ10Keyboard::KeyEvent key)
 
 void upCommandPressed()
 {
-  if ((currentPage + 1) < (outgoingMessage.length() / charactersPerLine)) currentPage++;
+  if ((currentPage + 1) < (incomingMessage.length() / charactersPerLine)) currentPage++;
   Serial.print("up");  
   Serial.print("len: ");  
-  Serial.println(outgoingMessage.length());  
+  Serial.println(incomingMessage.length());  
   Serial.print("div: ");  
-  Serial.println(outgoingMessage.length() / charactersPerLine);  
+  Serial.println(incomingMessage.length() / charactersPerLine);  
   Serial.print("currentPage: ");  
   Serial.println(currentPage);  
-  sendMessage(outgoingMessage, currentPage);
+  sendMessage(incomingMessage, currentPage);
 }
 
 void downCommandPressed()
@@ -186,7 +207,7 @@ void downCommandPressed()
   if (currentPage > 0) currentPage--;
   Serial.print("down, currentPage: ");  
   Serial.println(currentPage);  
-  sendMessage(outgoingMessage, currentPage);
+  sendMessage(incomingMessage, currentPage);
 }
 
 void deleteCharacterPressed()
@@ -207,13 +228,24 @@ void enterCommandPressed()
   Serial.print(outgoingMessage);  
   Serial.println("\"");    
 
-    // SEND VIA SERIAL TO CELL BOARD
-  Serial1.println(outgoingMessage);
 
+  if(outgoingMessage == "msg"){
+    Serial1.println("AT+CMGL=\"ALL\"");    
+  } else if (outgoingMessage.startsWith("msg")) {
+    String message = "AT+CMGR=" + outgoingMessage.substring(3, outgoingMessage.length());
+    Serial.println(message);  
+    Serial1.println(message);    
+  } else {
+    // SEND VIA SERIAL TO CELL BOARD
+    Serial1.println(outgoingMessage);
+  }
+
+  // resets current data
   currentPage = 0; 
   outgoingMessage = "";
 
-  sendCommand(0x01); // ** Clear display
+  // clear display
+  sendCommand(clearDisplay); // ** Clear display
   setCursor(0,0);     
 }
 
@@ -222,9 +254,10 @@ void enterCommandPressed()
 // ------------------------------
 void sendMessage(String message, int page)
 {
-  Serial.print("send message: ");
-  Serial.println(page);
-
+  //Serial.print("send message: ");
+  //Serial.println(page);
+  sendCommand(clearDisplay); // ** Clear display
+  setCursor(0,0);  
   String displayMessage = "";
   int msgLength = message.length();
   int start = 0;
