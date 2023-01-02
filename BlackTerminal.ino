@@ -2,7 +2,8 @@
 #include <BBQ10Keyboard.h>
 
 const String projectName = "BlackTerminal";
-const String defaultTelephoneNumber = "18035586732";
+const String deviceNumber = "18035586732";
+const String defaultTelephoneNumber = "17044923691";
 
 char OLED_Address = 0x3c;
 char OLED_Command_Mode = 0x80;
@@ -37,6 +38,8 @@ int commandKeyBack = 17;
 int commandKeyDown = 18;
 
 char newline = 0xA;
+char carriageReturn = 0xD;
+
 char clearDisplay = 0x01;
 
 String outgoingMessage = "";
@@ -72,6 +75,9 @@ void setup() {
   // sendMessage("started v0.1", 2);
   delay(1000);//wait one sec to see the started message
 
+  // turn echo off
+  Serial1.println("ATE0");    
+
   sendCommand(clearDisplay); // ** Clear display
   setCursor(0,0);
 }
@@ -88,18 +94,77 @@ void checkForSIM7600Messages() {
     String messageFromSIM7600 = Serial1.readString();
     //remove incoming end \r\n from the message
     messageFromSIM7600.trim();
-    Serial.println(messageFromSIM7600);
-    Serial.println(messageFromSIM7600.indexOf(newline));// newline character
 
 
-    incomingMessage = messageFromSIM7600;
-    setCursor(0,0);  
-    sendMessage(incomingMessage, currentPage);
+    if (messageFromSIM7600.startsWith("+CMGR")){
+      // process single message
+      processMessage(messageFromSIM7600);
+
+    } else if (messageFromSIM7600.startsWith("+CMTI")){
+      // message recieved
+      processReceivedMessage(messageFromSIM7600);
+    } else {
+      Serial.println(messageFromSIM7600);
+      Serial.println(messageFromSIM7600.indexOf(newline));// newline character
+      incomingMessage = messageFromSIM7600;
+      setCursor(0,0);  
+      sendMessage(incomingMessage, currentPage);
+    }
 
     //setCursor(0,0);  
     //sendMessage(messageFromSIM7600, currentPage);
   }
 }
+
+
+void processSingleMessage(String message)
+{
+  int firstNewLine = message.indexOf(newline);// newline character
+  String firstBlock = message.substring(0, firstNewLine);
+  Serial.print("first: ");
+  Serial.println(firstBlock);
+
+  String secondBlock = message.substring(firstNewLine + 1, message.length());
+
+  int secondNewLine = secondBlock.indexOf(newline);// newline character
+  secondBlock = secondBlock.substring(0, secondNewLine);
+
+  Serial.print("second: ");
+  Serial.println(secondBlock);
+
+}
+
+void processMessage(String message)
+{
+  int firstNewLine = message.indexOf(newline);// newline character
+
+  String secondBlock = message.substring(firstNewLine + 1, message.length());
+
+  int secondNewLine = secondBlock.indexOf(newline);// newline character
+  secondBlock = secondBlock.substring(0, secondNewLine);
+
+  Serial.print("message: ");
+  Serial.println(secondBlock);
+
+  incomingMessage = secondBlock;
+  setCursor(0,0);  
+  sendMessage(secondBlock, currentPage);
+  //return secondBlock;
+}
+
+void processReceivedMessage(String message)
+{
+  //+CMTI: "SM",3  
+  int messageSplitChar = message.indexOf(",");// newline character
+
+  String messageNumber = message.substring(messageSplitChar + 1, message.length());
+
+  Serial.print("message: ");
+  Serial.println(messageNumber);
+
+  Serial1.println("AT+CMGR=" + messageNumber);
+}
+
 
 
 // for test communication via arduino serial, use if you plan on controlling/communicating with phone via 
@@ -233,11 +298,14 @@ void enterCommandPressed()
     Serial1.println("AT+CMGL=\"ALL\"");    
   } else if (outgoingMessage.startsWith("msg")) {
     String message = "AT+CMGR=" + outgoingMessage.substring(3, outgoingMessage.length());
-    Serial.println(message);  
+    //Serial.println(message);  
     Serial1.println(message);    
+  } else if (outgoingMessage.startsWith("AT") || outgoingMessage.startsWith("at")) {
+    Serial1.println(outgoingMessage);    
   } else {
     // SEND VIA SERIAL TO CELL BOARD
-    Serial1.println(outgoingMessage);
+    // Serial1.println(outgoingMessage);
+    sendTextToDefaultNumber(outgoingMessage);
   }
 
   // resets current data
@@ -248,6 +316,36 @@ void enterCommandPressed()
   sendCommand(clearDisplay); // ** Clear display
   setCursor(0,0);     
 }
+
+void sendTextToDefaultNumber(String message) {
+  Serial.print("SEND TEXT VIA KEYBOARD");
+
+  Serial1.print("AT+CMGS=\"");// must have quotes on number
+  Serial1.print(defaultTelephoneNumber);
+  Serial1.println("\"");// must have quotes on number
+  
+  //wait for > response from SIM7600
+  delay(200);
+  
+  // send message to SIM7600
+  Serial1.print(message);
+  // Serial1.print(" @");
+  // Serial1.print(millis());
+  
+  // log text part of sent message
+  Serial.print("sent: ");
+  Serial.println(message);
+  
+  // close message sending process with control-z character
+  Serial1.write(0x1A);  // sends ctrl+z end of message
+
+
+  Serial.println("COMPLETED");
+}
+
+
+
+
 
 
 // ONE WIRE OLED METHODS
