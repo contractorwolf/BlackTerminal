@@ -95,14 +95,18 @@ void checkForSIM7600Messages() {
     //remove incoming end \r\n from the message
     messageFromSIM7600.trim();
 
-
-    if (messageFromSIM7600.startsWith("+CMGR")){
+    if (messageFromSIM7600.startsWith("+CMGR")){ // request output from single message in memory
       // process single message
       processMessage(messageFromSIM7600);
 
-    } else if (messageFromSIM7600.startsWith("+CMTI")){
+    } else if (messageFromSIM7600.startsWith("+CMTI")){ // incoming single message received
       // message recieved
       processReceivedMessage(messageFromSIM7600);
+
+    } else if (messageFromSIM7600.startsWith("+CMGL")){ // process in memory list
+      // message list recieved
+      processInMemoryList(messageFromSIM7600);
+
     } else {
       Serial.println(messageFromSIM7600);
       Serial.println(messageFromSIM7600.indexOf(newline));// newline character
@@ -110,15 +114,14 @@ void checkForSIM7600Messages() {
       setCursor(0,0);  
       sendMessage(incomingMessage, currentPage);
     }
-
-    //setCursor(0,0);  
-    //sendMessage(messageFromSIM7600, currentPage);
   }
 }
 
 
 void processSingleMessage(String message)
 {
+  Serial.println("processSingleMessage");
+  Serial.println(message);
   int firstNewLine = message.indexOf(newline);// newline character
   String firstBlock = message.substring(0, firstNewLine);
   Serial.print("first: ");
@@ -131,11 +134,94 @@ void processSingleMessage(String message)
 
   Serial.print("second: ");
   Serial.println(secondBlock);
+}
 
+// takes the messages in 7600 memory and iterates through the list
+// should construct a string that can be sent to the screen
+void processInMemoryList(String messages) {
+    Serial.println("processInMemoryList");
+    // messages needs a large size
+    int firstIndex = messages.indexOf('\n');
+    int index = 0;
+    incomingMessage = "";
+    int chars = 0;
+    String blank = "                ";
+    while (firstIndex > 0) {
+        // figure out max size of messageData
+        String messageData = messages.substring(0, firstIndex);
+
+        String remainingMessages = messages.substring(firstIndex + 1, messages.length());
+        int nextIndex = remainingMessages.indexOf('\n');
+
+        String message = remainingMessages.substring(0, nextIndex);
+
+        String number  = parseMessageData(messageData, 2);
+
+        //incomingMessage = incomingMessage + message;
+
+        int len = message.length();
+
+        int mod = len % 16;
+
+        int remain = 16 - mod;
+
+        String blanks = blank.substring(0,remain);
+
+        Serial.print(index++);
+        Serial.print(": ");
+        Serial.print(message);
+        Serial.print(blanks);
+        Serial.print(": ");
+        Serial.print(len);
+        Serial.print(": ");
+        Serial.print(mod);
+        Serial.print(": ");
+        Serial.print(blanks.length());
+        Serial.print(": ");
+        Serial.println(remain);
+
+        
+        incomingMessage = incomingMessage +  message + blanks;
+
+
+        // trim of first endline and message
+        messages = messages.substring(nextIndex + firstIndex + 2, messages.length());
+        //start at the follwing line
+        firstIndex = messages.indexOf('\n');    
+    }
+
+    sendCommand(clearDisplay); // ** Clear display
+    sendMessage(incomingMessage, currentPage);
+}
+
+// reads the meta data from each message to parse the type and incoming number
+// section is the zero based comma deliminated section of the message to 
+// be retrieved, 2 being the string incoming number
+String parseMessageData(String messageData, int section){
+  // incoming format:
+  // +CMGL: 10,"REC READ","+17044923691","","23/01/03,06:08:37-32"
+  //console.log(`messageData: ${messageData}`);
+  int firstIndex = messageData.indexOf(',');
+  int index = 0;
+  while (firstIndex > 0) {
+      // figure out max size of messageData
+      String messagePart = messageData.substring(0, firstIndex);
+
+      // if this is the section we are looking for by index, return
+      if(section == index) return messagePart;
+
+      messageData = messageData.substring(firstIndex + 1, messageData.length());
+
+      //start at the follwing line
+      firstIndex = messageData.indexOf(',');    
+      index++;          
+  }
 }
 
 void processMessage(String message)
 {
+  Serial.println(message);
+  // request output from single message in memory  
   int firstNewLine = message.indexOf(newline);// newline character
 
   String secondBlock = message.substring(firstNewLine + 1, message.length());
@@ -154,6 +240,7 @@ void processMessage(String message)
 
 void processReceivedMessage(String message)
 {
+  Serial.println(message);
   //+CMTI: "SM",3  
   int messageSplitChar = message.indexOf(",");// newline character
 
@@ -218,9 +305,13 @@ void checkForKeyboardMessages() {
 
       } else if (key.key == commandKeyBack) { // back button pressed
         Serial.println("cursor back");  
-
       } else if (key.key == commandKeyDown) { // down button pressed
-        downCommandPressed();
+        Serial.print("command key: ");
+        Serial.println(key.key);  
+        downCommandPressed();      
+      } else { // unknown
+        Serial.print("unknown command key: ");
+        Serial.println(key.key);  
       }
     }
   }
